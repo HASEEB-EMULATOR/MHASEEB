@@ -5,27 +5,28 @@ jobs:
   extract:
     runs-on: ubuntu-latest
     steps:
+      - name: Check token permissions
+        run: |
+          echo "=== repo actions permissions ==="
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/actions/permissions
+          echo
+          echo "=== can we write? (dry-run push test) ==="
+          curl -s -o /dev/null -w "push_endpoint_status=%{http_code}\n" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/git/refs/heads/main
+
       - uses: actions/checkout@v4
 
       - name: Unzip
         run: |
-          ls -la
           ZIP=$(ls *.zip | head -1)
           echo "zip=$ZIP"
           unzip -o "$ZIP"
           rm -f "$ZIP"
-          echo "--- files now ---"
           find . -type f -not -path './.git/*' | wc -l
 
-      - name: Show git state
-        run: |
-          git status --short | head -30
-          echo "--- remote ---"
-          git remote -v
-          echo "--- branch ---"
-          git branch --show-current
-
-      - name: Commit and push (errors visible)
+      - name: Commit and push
         run: |
           git config user.name extract-bot
           git config user.email extract-bot@users.noreply.github.com
