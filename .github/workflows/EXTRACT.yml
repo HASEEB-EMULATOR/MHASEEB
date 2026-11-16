@@ -6,50 +6,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Unzip
         run: |
-          echo "--- before ---"
           ls -la
-          ZIP=$(ls *.zip 2>/dev/null | head -1)
-          if [ -z "$ZIP" ]; then echo "NO ZIP FOUND"; exit 1; fi
-          echo "zip: $ZIP ($(du -h "$ZIP" | cut -f1))"
-          unzip -o "$ZIP" 2>&1 | tail -20
-          echo "unzip exit: $?"
+          ZIP=$(ls *.zip | head -1)
+          echo "zip=$ZIP"
+          unzip -o "$ZIP"
           rm -f "$ZIP"
-          echo "--- after ---"
-          echo "files: $(find . -type f -not -path './.git/*' | wc -l)"
-          echo "cpp:   $(find . -name '*.cpp' | wc -l)"
-          echo "hpp:   $(find . -name '*.hpp' | wc -l)"
-          echo "kt:    $(find . -name '*.kt' | wc -l)"
-          ls -la
+          echo "--- files now ---"
+          find . -type f -not -path './.git/*' | wc -l
 
-      - name: Commit and push
+      - name: Show git state
+        run: |
+          git status --short | head -30
+          echo "--- remote ---"
+          git remote -v
+          echo "--- branch ---"
+          git branch --show-current
+
+      - name: Commit and push (errors visible)
         run: |
           git config user.name extract-bot
           git config user.email extract-bot@users.noreply.github.com
           git add -A
-          echo "--- staged ---"
-          git status --short | head -20
-          git commit -m "extract full source M1-M8" 2>&1 | tail -5
-          echo "--- push attempt 1 ---"
-          git push 2>&1 | tail -5 || {
-            echo "push failed, trying rebase"
-            git pull --rebase --autostash 2>&1 | tail -5
-            git push 2>&1 | tail -5
-          }
-          echo "--- final ---"
-          git log --oneline -3
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "## Extract result"
-            echo "- cpp: $(find . -name '*.cpp' | wc -l)"
-            echo "- hpp: $(find . -name '*.hpp' | wc -l)"
-            echo "- kt: $(find . -name '*.kt' | wc -l)"
-            echo "- total: $(find . -type f -not -path './.git/*' | wc -l)"
-          } >> $GITHUB_STEP_SUMMARY
+          git commit -m "extract full source M1-M8"
+          git push origin HEAD:main
