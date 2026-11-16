@@ -1,0 +1,62 @@
+name: BUILD APK
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Unzip source
+        run: |
+          ZIP=$(ls *.zip | head -1)
+          echo "zip=$ZIP"
+          unzip -o "$ZIP"
+          echo "cpp files: $(find . -name '*.cpp' | wc -l)"
+          echo "kotlin:    $(find . -name '*.kt' | wc -l)"
+
+      - name: Android SDK + NDK + CMake
+        run: |
+          SDK=$HOME/android-sdk
+          mkdir -p "$SDK/cmdline-tools"; cd "$SDK"
+          curl -sSLo c.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+          unzip -q c.zip -d cmdline-tools
+          mv cmdline-tools/cmdline-tools cmdline-tools/latest
+          yes 2>/dev/null | cmdline-tools/latest/bin/sdkmanager --sdk_root="$SDK" --licenses > /dev/null 2>&1 || true
+          cmdline-tools/latest/bin/sdkmanager --sdk_root="$SDK" \
+            "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          cd "$GITHUB_WORKSPACE"; echo "sdk.dir=$SDK" > local.properties
+
+      - name: Gradle
+        run: |
+          curl -sSLo /tmp/g.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q /tmp/g.zip -d /opt
+          echo "/opt/gradle-8.9/bin" >> $GITHUB_PATH
+
+      - name: Debug keystore
+        run: |
+          keytool -genkeypair -v -keystore debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build
+        run: |
+          gradle --no-daemon assembleDebug 2>&1 | tee build-full.log | tail -60
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: haseeb-apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            build-full.log
+          if-no-files-found: warn
