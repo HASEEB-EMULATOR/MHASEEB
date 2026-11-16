@@ -1,0 +1,37 @@
+name: EXTRACT SOURCE
+on: workflow_dispatch
+permissions: write-all
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip everything into the repo
+        run: |
+          set -e
+          ZIP=$(ls *.zip | head -1)
+          echo "found: $ZIP"
+          unzip -o -q "$ZIP"
+          rm -f "$ZIP"
+          echo "--- extracted ---"
+          echo "files: $(find . -type f -not -path './.git/*' | wc -l)"
+          echo "kotlin: $(find . -name '*.kt' | wc -l)"
+          echo "cpp: $(find . -name '*.cpp' | wc -l)"
+          echo "hpp: $(find . -name '*.hpp' | wc -l)"
+          ls -1
+
+      - name: Commit every extracted file
+        run: |
+          git config user.name extract-bot
+          git config user.email extract-bot@users.noreply.github.com
+          git add -A
+          git commit -m "extract full source (M1-M8)" || echo "nothing to commit"
+          git push
+
+      - name: Summary
+        run: |
+          echo "### Extracted" >> $GITHUB_STEP_SUMMARY
+          echo "- cpp: $(find . -name '*.cpp' | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "- hpp: $(find . -name '*.hpp' | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "- kt: $(find . -name '*.kt' | wc -l)" >> $GITHUB_STEP_SUMMARY
