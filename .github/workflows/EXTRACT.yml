@@ -6,32 +6,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Unzip everything into the repo
+      - name: Unzip
         run: |
-          set -e
-          ZIP=$(ls *.zip | head -1)
-          echo "found: $ZIP"
-          unzip -o -q "$ZIP"
+          echo "--- before ---"
+          ls -la
+          ZIP=$(ls *.zip 2>/dev/null | head -1)
+          if [ -z "$ZIP" ]; then echo "NO ZIP FOUND"; exit 1; fi
+          echo "zip: $ZIP ($(du -h "$ZIP" | cut -f1))"
+          unzip -o "$ZIP" 2>&1 | tail -20
+          echo "unzip exit: $?"
           rm -f "$ZIP"
-          echo "--- extracted ---"
+          echo "--- after ---"
           echo "files: $(find . -type f -not -path './.git/*' | wc -l)"
-          echo "kotlin: $(find . -name '*.kt' | wc -l)"
-          echo "cpp: $(find . -name '*.cpp' | wc -l)"
-          echo "hpp: $(find . -name '*.hpp' | wc -l)"
-          ls -1
+          echo "cpp:   $(find . -name '*.cpp' | wc -l)"
+          echo "hpp:   $(find . -name '*.hpp' | wc -l)"
+          echo "kt:    $(find . -name '*.kt' | wc -l)"
+          ls -la
 
-      - name: Commit every extracted file
+      - name: Commit and push
         run: |
           git config user.name extract-bot
           git config user.email extract-bot@users.noreply.github.com
           git add -A
-          git commit -m "extract full source (M1-M8)" || echo "nothing to commit"
-          git push
+          echo "--- staged ---"
+          git status --short | head -20
+          git commit -m "extract full source M1-M8" 2>&1 | tail -5
+          echo "--- push attempt 1 ---"
+          git push 2>&1 | tail -5 || {
+            echo "push failed, trying rebase"
+            git pull --rebase --autostash 2>&1 | tail -5
+            git push 2>&1 | tail -5
+          }
+          echo "--- final ---"
+          git log --oneline -3
 
       - name: Summary
+        if: always()
         run: |
-          echo "### Extracted" >> $GITHUB_STEP_SUMMARY
-          echo "- cpp: $(find . -name '*.cpp' | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "- hpp: $(find . -name '*.hpp' | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "- kt: $(find . -name '*.kt' | wc -l)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Extract result"
+            echo "- cpp: $(find . -name '*.cpp' | wc -l)"
+            echo "- hpp: $(find . -name '*.hpp' | wc -l)"
+            echo "- kt: $(find . -name '*.kt' | wc -l)"
+            echo "- total: $(find . -type f -not -path './.git/*' | wc -l)"
+          } >> $GITHUB_STEP_SUMMARY
