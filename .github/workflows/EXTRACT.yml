@@ -5,31 +5,35 @@ jobs:
   extract:
     runs-on: ubuntu-latest
     steps:
-      - name: Check token permissions
-        run: |
-          echo "=== repo actions permissions ==="
-          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/repos/${{ github.repository }}/actions/permissions
-          echo
-          echo "=== can we write? (dry-run push test) ==="
-          curl -s -o /dev/null -w "push_endpoint_status=%{http_code}\n" \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/repos/${{ github.repository }}/git/refs/heads/main
-
       - uses: actions/checkout@v4
 
       - name: Unzip
         run: |
           ZIP=$(ls *.zip | head -1)
-          echo "zip=$ZIP"
           unzip -o "$ZIP"
           rm -f "$ZIP"
-          find . -type f -not -path './.git/*' | wc -l
+          echo "files=$(find . -type f -not -path './.git/*' | wc -l)"
 
       - name: Commit and push
         run: |
           git config user.name extract-bot
           git config user.email extract-bot@users.noreply.github.com
           git add -A
-          git commit -m "extract full source M1-M8"
-          git push origin HEAD:main
+          echo "staged: $(git diff --cached --name-only | wc -l) files"
+
+          if git diff --cached --quiet; then
+            echo "::error::NOTHING_STAGED - unzip produced no new files"
+            exit 1
+          fi
+
+          git commit -m "extract full source M1-M8" || true
+
+          OUT=$(git push origin HEAD:main 2>&1)
+          RC=$?
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            SHORT=$(echo "$OUT" | grep -iE "denied|403|permission|error|fatal" | head -2 | tr '\n' ' ')
+            echo "::error::PUSH_FAILED rc=$RC :: $SHORT"
+            exit 1
+          fi
+          echo "PUSH_OK"
